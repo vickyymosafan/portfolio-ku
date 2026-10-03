@@ -1,0 +1,16 @@
+{
+  "description": "Portfolio-ku: menyalakan server portfolio otomatis saat sesi dimulai — HANYA bila diaktifkan (\"autostart\": true di .claude/portfolio-ku.json atau PORTFOLIO_AUTOSTART=1). Tanpa itu hook ini langsung selesai tanpa efek dan tanpa output.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/skills/portfolio-ku/runtime/bin/portfolio-ku.sh\" autostart",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

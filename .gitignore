@@ -1,0 +1,29 @@
+node_modules/
+.DS_Store
+Thumbs.db
+desktop.ini
+*.log
+# data runtime tidak pernah ada di repo (disimpan di ~/.cache/portfolio-ku/)
+.cache/
+
+# Konfigurasi lokal Command Code (berisi path mesin & preferensi pribadi)
+.commandcode/
+
+# Dokumen sumber lokal (file CV kerja, dsb.)
+*.docx
+
+# Aset 3D sumber: .blend ±190 MB dan hanya hasil ekspor GLB yang dikirim
+*.blend
+*.blend[0-9]
+*.blend@
+skills/portfolio-ku/runtime/public/assets/models/_backup_original/
+skills/portfolio-ku/runtime/public/assets/models/_tex_v3/
+skills/portfolio-ku/runtime/public/assets/models/test_*.glb
+
+# Model sumber Meshy (bahan pembuatan scene, tidak dimuat runtime)
+skills/portfolio-ku/runtime/public/assets/models/meshy_*.glb
+skills/portfolio-ku/runtime/public/assets/models/meshy_*_textures/
+
+# Ekspor arsitektur lama — hanya architecture_voffice_v2.glb yang dimuat runtime
+skills/portfolio-ku/runtime/public/assets/models/architecture_*.glb
+!skills/portfolio-ku/runtime/public/assets/models/architecture_voffice_v2.glb

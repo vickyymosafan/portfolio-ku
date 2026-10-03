@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "portfolio-ku",
+  "description": "Marketplace untuk plugin Portfolio-ku — portfolio 3D yang menampilkan Claude dan subagent-nya bekerja.",
+  "owner": { "name": "vickyymosafan", "url": "https://github.com/vickyymosafan" },
+  "plugins": [
+    {
+      "name": "portfolio-ku",
+      "source": "./",
+      "description": "Portfolio 3D tanpa konfigurasi: Ketua + tim 4 orang + freelancer, digerakkan transkrip Claude Code nyata.",
+      "category": "productivity",
+      "tags": ["subagents", "dashboard", "three.js", "visualization"]
+    }
+  ]
+}
