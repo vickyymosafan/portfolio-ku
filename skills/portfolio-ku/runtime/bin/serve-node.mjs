@@ -1,15 +1,16 @@
 #!/usr/bin/env node
 // Server Portfolio-ku untuk Node ≥ 18 (tanpa dependensi npm). Setara dengan public/index.php (PHP) — dicek bin/parity.mjs.
-//   /kerja  /kerja/api/state  /kerja/api/ping  /kerja/assets/<file.js>
-// Read-only: hanya membaca transkrip Claude Code project (ringkasan tool_use; isi tool_result tidak pernah dibaca).
+//   /kerja  /kerja/api/ping  /kerja/assets/<berkas>
+// Menyajikan halaman Vicky VOffice + asetnya (read-only, tidak menulis apa pun ke project).
 // Biasanya dijalankan lewat bin/portfolio-ku.sh start. Variabel lingkungan:
-//   PORTFOLIO_PROJECT  folder project (default: folder kerja saat ini)   PORTFOLIO_STORAGE  folder cache/pid (opsional)
-//   PORTFOLIO_PORT     port (default 8788)   PORTFOLIO_BIND  alamat (default 127.0.0.1)   PORTFOLIO_ALLOWED_HOSTS  host tambahan
+//   PORTFOLIO_PROJECT  folder project (default: folder kerja saat ini)   PORTFOLIO_PORT  port (default 8788)
+//   PORTFOLIO_BIND     alamat bind (default 127.0.0.1)                   PORTFOLIO_ALLOWED_HOSTS  host tambahan
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { hostAllowed, SECURITY_HEADERS } from '../lib/node/http.mjs';
 
 const major = Number(process.versions.node.split('.')[0]);
 if (major < 18) {
@@ -26,24 +27,9 @@ try {
   console.error(`[portfolio] folder project tidak ditemukan: ${process.env.PORTFOLIO_PROJECT}`);
   process.exit(1);
 }
-const STORAGE = process.env.PORTFOLIO_STORAGE ? path.resolve(process.env.PORTFOLIO_STORAGE) : null;
-const { loadConfig } = await import(new URL('../lib/node/config.mjs', import.meta.url));
-const { buildState } = await import(new URL('../lib/node/office.mjs', import.meta.url));
-const { pageConfig, hostAllowed, SECURITY_HEADERS } = await import(new URL('../lib/node/http.mjs', import.meta.url));
-
-if (STORAGE) {
-  try {
-    fs.mkdirSync(path.join(STORAGE, 'cache'), { recursive: true });
-  } catch {
-    /* cache opsional */
-  }
-}
 const PROJECT_ID = crypto.createHash('md5').update(PROJECT).digest('hex').slice(0, 12);
 const extraHosts = String(process.env.PORTFOLIO_ALLOWED_HOSTS || '');
 
-const htmlEsc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[c]));
-// setara JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS (karakter ini hanya muncul di dalam string JSON): aman di <script>
-const scriptJson = (v) => JSON.stringify(v).replace(/[<>&'\u2028\u2029]/g, (c) => `\\u${c.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')}`);
 const rawurldecode = (s) => {
   try {
     return decodeURIComponent(s.replace(/\+/g, '%2B'));
@@ -72,18 +58,9 @@ async function handle(req, res) {
     return send(res, 200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' },
       JSON.stringify({ app: 'portfolio-ku', project: PROJECT_ID, runtime: 'node' }));
   }
-  // config dibaca per permintaan supaya perubahan .claude/portfolio-ku.json langsung terpakai
-  const cfg = loadConfig(RUNTIME, PROJECT);
   if (p === '/kerja') {
     const page = fs.readFileSync(path.join(RUNTIME, 'views', 'page.html'), 'utf8');
-    const html = page.replace(/\{\{TITLE\}\}|\{\{CONFIG_SCRIPT\}\}/g, (m) => (m === '{{TITLE}}'
-      ? htmlEsc(cfg.title)
-      : `<script>window.PORTFOLIO = ${scriptJson(pageConfig(cfg))};</script>`));
-    return send(res, 200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' }, html);
-  }
-  if (p === '/kerja/api/state') {
-    const state = buildState({ projectDir: PROJECT, storageDir: STORAGE, cfg, now: Date.now() });
-    return send(res, 200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }, JSON.stringify(state));
+    return send(res, 200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' }, page);
   }
   if (p.startsWith('/kerja/assets/')) {
     const rel = rawurldecode(p.slice('/kerja/assets/'.length));
@@ -141,7 +118,7 @@ server.listen(port, bind, () => console.log(`Portfolio-ku: http://${bind === '0.
 for (const sig of ['SIGINT', 'SIGTERM']) {
   process.on(sig, () => {
     server.close(() => process.exit(0));
-    server.closeAllConnections?.(); // koneksi keep-alive dari polling browser
+    server.closeAllConnections?.(); // koneksi keep-alive dari browser
     setTimeout(() => process.exit(0), 800).unref();
   });
 }

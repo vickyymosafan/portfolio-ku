@@ -1,13 +1,12 @@
 #!/usr/bin/env node
-// Uji kesetaraan server PHP (public/index.php via php -S) dan Node (bin/serve-node.mjs) pada project & transkrip yang sama.
-//   node bin/parity.mjs [--project=DIR] [--php-port=8791] [--node-port=8792] [--rounds=2] [--forbid=regex …]
-// Membandingkan: JSON /kerja/api/state (kecuali "now"), window.PORTFOLIO di /kerja, /kerja/api/ping (kecuali "runtime"),
-// aset + ETag, header keamanan, 404 untuk path terlarang, 421 untuk Host asing, dan tidak ada rahasia yang bocor.
+// Uji kesetaraan server PHP (public/index.php via php -S) dan Node (bin/serve-node.mjs) untuk project yang sama.
+//   node bin/parity.mjs [--project=DIR] [--php-port=8791] [--node-port=8792]
+// Membandingkan: halaman /kerja (byte identik), header keamanan, /kerja/api/ping (kecuali "runtime"), aset
+// (js/glb — isi & metadata), ETag + 304, 404 untuk path terlarang, 421 untuk Host asing, dan 405 untuk POST.
 // Keluar 0 bila semua sama. Kedua server dimatikan di akhir.
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
-import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -16,12 +15,6 @@ const arg = (k, d) => process.argv.slice(2).filter((a) => a.startsWith(`--${k}=`
 const PROJECT = fs.realpathSync(arg('project', process.cwd()));
 const PHP_PORT = Number(arg('php-port', 8791));
 const NODE_PORT = Number(arg('node-port', 8792));
-const ROUNDS = Number(arg('rounds', 2));
-const FORBID = [
-  /\bsk-(?!•)[A-Za-z0-9_-]{8,}/, /\bghp_[A-Za-z0-9]{20,}/, /\bAKIA[0-9A-Z]{16}\b/,
-  ...process.argv.slice(2).filter((a) => a.startsWith('--forbid=')).map((a) => new RegExp(a.slice(9))),
-];
-const STORE = fs.mkdtempSync(path.join(os.tmpdir(), 'portfolio-parity-'));
 const procs = [];
 const problems = [];
 const ok = [];
@@ -33,13 +26,12 @@ const cleanup = () => {
       /* sudah berhenti */
     }
   }
-  fs.rmSync(STORE, { recursive: true, force: true });
 };
 process.on('exit', cleanup);
 for (const s of ['SIGINT', 'SIGTERM']) process.on(s, () => process.exit(130));
 
 function start(cmd, args, env) {
-  const p = spawn(cmd, args, { cwd: RUNTIME, env: { ...process.env, PORTFOLIO_PROJECT: PROJECT, PORTFOLIO_STORAGE: STORE, ...env }, stdio: ['ignore', 'ignore', 'pipe'] });
+  const p = spawn(cmd, args, { cwd: RUNTIME, env: { ...process.env, PORTFOLIO_PROJECT: PROJECT, ...env }, stdio: ['ignore', 'ignore', 'pipe'] });
   let err = '';
   p.stderr.on('data', (d) => {
     err += d;
@@ -70,28 +62,14 @@ const hostGet = (port, p, host) => new Promise((resolve) => {
   req.on('error', () => resolve(0));
   req.end();
 });
-function diff(a, b, at = '$', ignore = new Set(), out = []) {
-  if (out.length > 40) return out;
-  const ta = Array.isArray(a) ? 'array' : a === null ? 'null' : typeof a;
-  const tb = Array.isArray(b) ? 'array' : b === null ? 'null' : typeof b;
-  if (ta !== tb) {
-    out.push(`${at}: tipe ${ta} ≠ ${tb} (${JSON.stringify(a)?.slice(0, 80)} | ${JSON.stringify(b)?.slice(0, 80)})`);
-    return out;
-  }
-  if (ta === 'array') {
-    if (a.length !== b.length) out.push(`${at}: panjang ${a.length} ≠ ${b.length}`);
-    for (let i = 0; i < Math.min(a.length, b.length); i++) diff(a[i], b[i], `${at}[${i}]`, ignore, out);
-  } else if (ta === 'object') {
-    const ka = Object.keys(a).filter((k) => !(at === '$' && ignore.has(k)));
-    const kb = Object.keys(b).filter((k) => !(at === '$' && ignore.has(k)));
-    if (ka.join('|') !== kb.join('|')) out.push(`${at}: kunci [${ka}] ≠ [${kb}]`);
-    for (const k of ka) if (Object.hasOwn(b, k)) diff(a[k], b[k], `${at}.${k}`, ignore, out);
-  } else if (a !== b) out.push(`${at}: ${JSON.stringify(a)?.slice(0, 100)} ≠ ${JSON.stringify(b)?.slice(0, 100)}`);
-  return out;
-}
 function check(name, cond, detail = '') {
   if (cond) ok.push(name);
   else problems.push(`${name}${detail ? `: ${detail}` : ''}`);
+}
+function firstDiff(a, b) {
+  const n = Math.min(a.length, b.length);
+  for (let i = 0; i < n; i++) if (a[i] !== b[i]) return `byte ${i}: ${JSON.stringify(a.slice(i, i + 40))} ≠ ${JSON.stringify(b.slice(i, i + 40))}`;
+  return `panjang ${a.length} ≠ ${b.length}`;
 }
 
 const phpErr = start('php', ['-S', `127.0.0.1:${PHP_PORT}`, '-t', 'public', 'public/index.php'], {});
@@ -101,47 +79,52 @@ const N = `http://127.0.0.1:${NODE_PORT}`;
 const up = (await waitUp(P, 'PHP', phpErr)) & (await waitUp(N, 'Node', nodeErr));
 
 if (up) {
-  let sp;
-  let sn;
-  for (let round = 1; round <= ROUNDS; round++) {
-    const [rp, rn] = await Promise.all([get(P, '/kerja/api/state'), get(N, '/kerja/api/state')]);
-    sp = await rp.json();
-    sn = await rn.json();
-    const d = diff(sp, sn, '$', new Set(['now']));
-    check(`state ronde ${round} identik (${sp.runs?.length ?? 0} run, ${sp.feed?.length ?? 0} event, ${sp.freelancers?.length ?? 0} freelancer)`, d.length === 0, `\n    ${d.slice(0, 25).join('\n    ')}`);
-  }
-  const raw = JSON.stringify(sp) + JSON.stringify(sn);
-  for (const re of FORBID) check(`tidak ada kebocoran ${re}`, !re.test(raw), (raw.match(re) || [''])[0].slice(0, 60));
-
+  // ---- halaman
   const [hp, hn] = await Promise.all([get(P, '/kerja'), get(N, '/kerja')]);
   const [tp, tn] = [await hp.text(), await hn.text()];
   check('/kerja 200 di keduanya', hp.status === 200 && hn.status === 200, `${hp.status}/${hn.status}`);
-  const cfgOf = (t) => {
-    const m = /window\.PORTFOLIO = (.*?);<\/script>/s.exec(t);
-    try {
-      return m ? JSON.parse(m[1]) : null;
-    } catch {
-      return null;
-    }
-  };
-  const cd = diff(cfgOf(tp), cfgOf(tn));
-  check('window.PORTFOLIO identik & valid', cfgOf(tp) !== null && cd.length === 0, cd.join('; '));
-  check('<title> identik', (/<title>(.*?)<\/title>/.exec(tp) || [])[1] === (/<title>(.*?)<\/title>/.exec(tn) || [])[1]);
+  check('/kerja identik byte-per-byte', tp === tn, tp === tn ? '' : firstDiff(tp, tn));
+  check('/kerja tanpa sisa konsep lama', !/office\.js|api\/state|\{\{/.test(tp));
   for (const h of ['x-robots-tag', 'referrer-policy', 'x-content-type-options', 'x-frame-options', 'content-security-policy']) {
     check(`header ${h}`, !!hp.headers.get(h) && hp.headers.get(h) === hn.headers.get(h), `${hp.headers.get(h)} / ${hn.headers.get(h)}`);
   }
+
+  // ---- identitas server
   const [pp, pn] = await Promise.all([get(P, '/kerja/api/ping'), get(N, '/kerja/api/ping')]);
   const [jp, jn] = [await pp.json(), await pn.json()];
   check('/kerja/api/ping identik (kecuali runtime)', jp.app === 'portfolio-ku' && jp.project === jn.project && jp.runtime === 'php' && jn.runtime === 'node');
-  const [ap, an] = await Promise.all([get(P, '/kerja/assets/office.js'), get(N, '/kerja/assets/office.js')]);
-  check('/kerja/assets/office.js identik', ap.status === 200 && an.status === 200 && (await ap.text()) === (await an.text()));
-  const etag = an.headers.get('etag');
-  check('ETag sama & 304', etag === ap.headers.get('etag') && (await get(N, '/kerja/assets/office.js', { 'If-None-Match': etag })).status === 304
-    && (await get(P, '/kerja/assets/office.js', { 'If-None-Match': etag })).status === 304);
+
+  // ---- aset teks
+  for (const a of ['/kerja/assets/cv-data.js', '/kerja/assets/portfolio-tour.js', '/kerja/assets/office.js']) {
+    const [ap, an] = await Promise.all([get(P, a), get(N, a)]);
+    if (a.endsWith('office.js')) {
+      check(`${a} → 404 (aset lama dihapus)`, ap.status === 404 && an.status === 404, `PHP ${ap.status} / Node ${an.status}`);
+      continue;
+    }
+    const [cp, cn] = [await ap.text(), await an.text()];
+    check(`${a} identik`, ap.status === 200 && an.status === 200 && cp === cn, `PHP ${ap.status} / Node ${an.status}${cp === cn ? '' : ` · ${firstDiff(cp, cn)}`}`);
+    check(`${a} Content-Type sama`, ap.headers.get('content-type') === an.headers.get('content-type'), `${ap.headers.get('content-type')} / ${an.headers.get('content-type')}`);
+    const etag = an.headers.get('etag');
+    check(`${a} ETag sama + 304`, !!etag && etag === ap.headers.get('etag')
+      && (await get(P, a, { 'If-None-Match': etag })).status === 304 && (await get(N, a, { 'If-None-Match': etag })).status === 304);
+  }
+
+  // ---- aset biner (model arsitektur) — cukup HEAD agar tidak mengunduh ±130 MB
+  const glb = '/kerja/assets/models/architecture_voffice_v2.glb';
+  const [gh, ghn] = await Promise.all([
+    fetch(P + glb, { method: 'HEAD' }),
+    fetch(N + glb, { method: 'HEAD' }),
+  ]);
+  check(`${glb} → GLB 200`, gh.status === 200 && ghn.status === 200, `PHP ${gh.status} / Node ${ghn.status}`);
+  check('GLB Content-Type sama', gh.headers.get('content-type') === 'model/gltf-binary' && gh.headers.get('content-type') === ghn.headers.get('content-type'), `${gh.headers.get('content-type')} / ${ghn.headers.get('content-type')}`);
+  check('GLB Content-Length sama', gh.headers.get('content-length') === ghn.headers.get('content-length'), `${gh.headers.get('content-length')} / ${ghn.headers.get('content-length')}`);
+  check('GLB ETag sama', !!gh.headers.get('etag') && gh.headers.get('etag') === ghn.headers.get('etag'), `${gh.headers.get('etag')} / ${ghn.headers.get('etag')}`);
+
+  // ---- penolakan
   for (const bad of [
-    '/kerja/assets/..%2F..%2Flib%2Fphp%2FConfig.php', '/kerja/assets/..%2Fdefaults.json', '/kerja/assets/%2e%2e/%2e%2e/defaults.json',
-    '/kerja/assets/../../bin/portfolio-ku.sh', '/kerja/assets/vendor/three/LICENSE', '/kerja/api/doc?path=README.md', '/kerja/evidence/x.png',
-    '/kerja/tidak-ada', '/lib/php/Config.php', '/defaults.json', '/views/page.html', '/public/index.php', '/kerja/assets/%00.js',
+    '/kerja/assets/..%2F..%2Flib%2Fphp%2FHttp.php', '/kerja/assets/..%2Fdefaults.json', '/kerja/assets/%2e%2e/%2e%2e/defaults.json',
+    '/kerja/assets/../../bin/portfolio-ku.sh', '/kerja/assets/vendor/three/LICENSE', '/kerja/assets/%00.js', '/kerja/api/doc?path=README.md',
+    '/kerja/evidence/x.png', '/kerja/tidak-ada', '/lib/php/Http.php', '/defaults.json', '/views/page.html', '/public/index.php',
   ]) {
     const [bp, bn] = await Promise.all([get(P, bad), get(N, bad)]);
     check(`404 ${bad}`, bp.status === 404 && bn.status === 404, `PHP ${bp.status} / Node ${bn.status}`);
@@ -150,7 +133,7 @@ if (up) {
     const [xp, xn] = await Promise.all([hostGet(PHP_PORT, '/kerja/api/ping', host), hostGet(NODE_PORT, '/kerja/api/ping', host)]);
     check(`Host ${host} → ${want}`, xp === want && xn === want, `PHP ${xp} / Node ${xn}`);
   }
-  const [mp, mn] = await Promise.all([fetch(`${P}/kerja/api/state`, { method: 'POST' }), fetch(`${N}/kerja/api/state`, { method: 'POST' })]);
+  const [mp, mn] = await Promise.all([fetch(`${P}/kerja`, { method: 'POST', redirect: 'manual' }), fetch(`${N}/kerja`, { method: 'POST', redirect: 'manual' })]);
   check('POST ditolak (405)', mp.status === 405 && mn.status === 405, `PHP ${mp.status} / Node ${mn.status}`);
   const [rp, rn] = await Promise.all([get(P, '/'), get(N, '/')]);
   check('/ → 302 /kerja', rp.status === 302 && rn.status === 302 && rp.headers.get('location') === '/kerja' && rn.headers.get('location') === '/kerja');

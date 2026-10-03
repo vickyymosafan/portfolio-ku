@@ -3,6 +3,22 @@
 Format mengikuti [Keep a Changelog](https://keepachangelog.com/id-ID/1.1.0/); versi mengikuti
 [Semantic Versioning](https://semver.org/lang/id/).
 
+## [1.1.0] — 2026-10-03
+### Diubah
+- Fokus proyek beralih dari pemantau transkrip Claude Code menjadi **portfolio virtual 3D pribadi "Vicky VOffice"**
+  (M. Vicky Mosafan): room tour lima area, virtual concierge Aria, misi terpandu, studi kasus proyek, dan CV teks —
+  seluruh konten dari satu berkas `cv-data.js`. README dan skill `/portfolio-ku` disesuaikan.
+- Tautan GitHub diseragamkan ke `github.com/vickyymosafan`; kontak dibatasi ke email `mvickymosafan@gmail.com`
+  (nomor telepon/WhatsApp dihapus dari konten).
+### Dihapus
+- Tampilan 3D "kantor Claude" beserta pemantau transkrip: `office.js`, rute `/kerja/api/state`, modul transkrip/office
+  (Node & PHP), `defaults.json` (nama tim & timing), dan kunci `names`/`title` pada konfigurasi project.
+- `window.PORTFOLIO` — halaman kini statis dan tidak lagi membaca konfigurasi server.
+### Diperbaiki
+- Server PHP kini menyajikan seluruh tipe aset seperti Node (`.glb`, `.png`, `.json`, `.webp`, `.gltf`, `.bin`, `.jpg`,
+  `.svg`) — sebelumnya hanya `.js`, sehingga model arsitektur gagal dimuat di runtime PHP. Berkas besar dialirkan
+  agar tidak melebihi batas memori PHP.
+
 ## [1.0.0] — 2026-09-29
 ### Ditambahkan
 - Rilis pertama sebagai plugin Claude Code (`portfolio-ku@portfolio-ku`) dengan marketplace sendiri, sekaligus bisa

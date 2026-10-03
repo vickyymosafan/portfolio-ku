@@ -9,6 +9,9 @@ desktop.ini
 # Konfigurasi lokal Command Code (berisi path mesin & preferensi pribadi)
 .commandcode/
 
+# Manifest plugin Claude Code (repo ini didistribusikan sebagai skill/manual, bukan marketplace)
+.claude-plugin/
+
 # Dokumen sumber lokal (file CV kerja, dsb.)
 *.docx
 

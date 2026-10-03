@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Portfolio-ku — server lokal untuk memantau agent Claude Code project di folder ini (read-only).
+# Portfolio-ku — server lokal untuk portfolio virtual 3D "Vicky VOffice" (read-only).
 #
 #   bash portfolio-ku.sh start   [--node|--php] [--port N] [--project DIR] [--bind ADDR]   jalankan (idempoten)
 #   bash portfolio-ku.sh stop                                                              hentikan server + tunnel
@@ -9,12 +9,12 @@
 #   bash portfolio-ku.sh tunnel                                                            URL publik sementara (cloudflared)
 #   bash portfolio-ku.sh tunnel-stop
 #   bash portfolio-ku.sh autostart                                                         untuk hook SessionStart (senyap, opt-in)
-#   bash portfolio-ku.sh detect                                                            cek Node/PHP/cloudflared & transkrip
+#   bash portfolio-ku.sh detect                                                            cek Node/PHP/cloudflared
 #
-# Tidak menulis apa pun ke folder project. Cache, PID, dan log disimpan di
+# Tidak menulis apa pun ke folder project. PID, log, dan data tunnel disimpan di
 #   ${PORTFOLIO_STATE_DIR:-${XDG_CACHE_HOME:-~/.cache}/portfolio-ku}/<slug-project>/
 # Variabel opsional: PORTFOLIO_PORT, PORTFOLIO_RUNTIME (node|php), PORTFOLIO_BIND, PORTFOLIO_STATE_DIR, PORTFOLIO_AUTOSTART=1,
-#   PORTFOLIO_ALLOWED_HOSTS, CLAUDE_CONFIG_DIR. Penimpaan per project (opsional): <project>/.claude/portfolio-ku.json
+#   PORTFOLIO_ALLOWED_HOSTS. Penimpaan per project (opsional): <project>/.claude/portfolio-ku.json (kunci: port, autostart).
 set -u
 
 RUNTIME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
@@ -46,7 +46,7 @@ say() { [ "$QUIET" = 1 ] || printf '%s\n' "$*"; }
 die() { printf 'Portfolio-ku: %s\n' "$*" >&2; exit 1; }
 
 if [ "$CMD" = help ]; then
-  sed -n '2,20p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+  sed -n '2,17p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
   exit 0
 fi
 
@@ -61,8 +61,6 @@ STATE="${PORTFOLIO_STATE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/portfolio-ku}/$SLU
 ENVF="$STATE/server.env"
 LOG="$STATE/server.log"
 CONFIG="$PROJECT/.claude/portfolio-ku.json"
-TRANSCRIPTS="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
-TRANSCRIPTS="${TRANSCRIPTS%/}/projects/$SLUG"
 
 cfg_value() { # nilai sederhana dari config JSON opsional (angka/boolean) tanpa bergantung pada runtime
   [ -f "$CONFIG" ] || return 0
@@ -152,11 +150,10 @@ print_running() {
   case "$(envget BIND)" in 127.0.0.1|localhost|::1) ;; *) say "  Jaringan : juga terbuka di jaringan lokal (bind $(envget BIND)) — siapa pun di jaringan ini bisa membukanya" ;; esac
   [ -f "$STATE/tunnel-url.txt" ] && alive "$(cat "$STATE/tunnel.pid" 2>/dev/null)" && say "  Publik   : $(cat "$STATE/tunnel-url.txt")"
   say "  Hentikan : bash \"$RUNTIME/bin/portfolio-ku.sh\" stop"
-  [ -d "$TRANSCRIPTS" ] || say "  Catatan  : belum ada transkrip Claude Code untuk folder ini — portfolio terisi setelah Claude Code dipakai di sini."
 }
 
 start_server() {
-  mkdir -p "$STATE/cache" || die "tidak bisa membuat $STATE"
+  mkdir -p "$STATE" || die "tidak bisa membuat $STATE"
   trim_log
   if running; then
     if [ "$(envget RUNTIME_DIR)" = "$RUNTIME" ] && { [ -z "$WANT_RT" ] || [ "$WANT_RT" = "$(envget RUNTIME)" ]; } \
@@ -187,10 +184,10 @@ start_server() {
     if port_busy "$port"; then port=$((port + 1)); continue; fi
     printf '\n[%s] start %s port %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$rt" "$port" >>"$LOG"
     if [ "$rt" = node ]; then
-      PORTFOLIO_PROJECT="$PROJECT" PORTFOLIO_STORAGE="$STATE" PORTFOLIO_PORT="$port" PORTFOLIO_BIND="$BIND" \
+      PORTFOLIO_PROJECT="$PROJECT" PORTFOLIO_PORT="$port" PORTFOLIO_BIND="$BIND" \
         nohup node "$RUNTIME/bin/serve-node.mjs" </dev/null >>"$LOG" 2>&1 &
     else
-      PORTFOLIO_PROJECT="$PROJECT" PORTFOLIO_STORAGE="$STATE" \
+      PORTFOLIO_PROJECT="$PROJECT" \
         nohup php -d display_errors=stderr -S "$BIND:$port" -t "$RUNTIME/public" "$RUNTIME/public/index.php" </dev/null >>"$LOG" 2>&1 &
     fi
     pid=$!
@@ -229,10 +226,7 @@ case "$CMD" in
     trim_log
     if running; then print_running; say "  PID      : $(envget PID) · mulai $(envget STARTED)"
     else say "Portfolio-ku tidak berjalan untuk project: $(basename "$PROJECT")"; say "  Mulai    : bash \"$RUNTIME/bin/portfolio-ku.sh\" start"; fi
-    say "  Data     : $STATE"
-    if [ -d "$TRANSCRIPTS" ]; then
-      say "  Transkrip: $(find "$TRANSCRIPTS" -maxdepth 1 -name '*.jsonl' 2>/dev/null | wc -l | tr -d ' ') sesi utama, $(find "$TRANSCRIPTS" -path '*/subagents/*' -name 'agent-*.jsonl' 2>/dev/null | wc -l | tr -d ' ') subagent"
-    else say "  Transkrip: belum ada ($TRANSCRIPTS)"; fi ;;
+    say "  Data     : $STATE" ;;
   tunnel)
     command -v cloudflared >/dev/null 2>&1 || die "cloudflared belum terpasang (macOS: brew install cloudflared · Linux: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/)."
     running || QUIET=1 start_server
@@ -256,7 +250,7 @@ case "$CMD" in
     echo "$URL/kerja" >"$STATE/tunnel-url.txt"
     say "URL publik: $URL/kerja"
     say "(alamat baru butuh ±30 detik sebelum bisa dibuka — bila gagal, tunggu sebentar lalu muat ulang)"
-    say "PERINGATAN: siapa pun yang tahu link ini bisa melihat aktivitas agent project ini (read-only, diredaksi)."
+    say "PERINGATAN: siapa pun yang tahu link ini bisa membuka portfolio ini (read-only)."
     say "Bagikan hanya ke orang yang kamu percaya. Matikan: bash \"$RUNTIME/bin/portfolio-ku.sh\" tunnel-stop" ;;
   tunnel-stop) stop_tunnel; say "Tunnel dimatikan." ;;
   autostart)
@@ -273,7 +267,6 @@ case "$CMD" in
     command -v cloudflared >/dev/null 2>&1 && echo "  cloudflared ada (opsional, URL publik)" || echo "  cloudflared tidak ada (opsional)"
     command -v curl >/dev/null 2>&1 && echo "  curl        ada" || echo "  curl        tidak ada (dipakai Node/PHP sebagai gantinya)"
     echo "  project     $PROJECT"
-    [ -d "$TRANSCRIPTS" ] && echo "  transkrip   ada ($TRANSCRIPTS)" || echo "  transkrip   belum ada ($TRANSCRIPTS)"
     echo "  data server $STATE" ;;
   *) echo "Perintah tidak dikenal: $CMD (start|stop|restart|status|url|tunnel|tunnel-stop|autostart|detect)" >&2; exit 2 ;;
 esac

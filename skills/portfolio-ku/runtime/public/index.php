@@ -3,20 +3,29 @@ declare(strict_types=1);
 
 /*
  * Portfolio-ku — server PHP (≥ 8.1, + mbstring), dijalankan lewat bin/portfolio-ku.sh:
- *   PORTFOLIO_PROJECT=<project> PORTFOLIO_STORAGE=<cache> php -S 127.0.0.1:8788 -t public public/index.php
- *   /kerja  /kerja/api/state  /kerja/api/ping  /kerja/assets/<file.js>
- * Setara dengan bin/serve-node.mjs (rute & JSON sama — bin/parity.mjs). Read-only: isi tool_result tidak pernah dibaca.
+ *   PORTFOLIO_PROJECT=<project> php -S 127.0.0.1:8788 -t public public/index.php
+ *   /kerja  /kerja/api/ping  /kerja/assets/<berkas>
+ * Setara dengan bin/serve-node.mjs (rute, header, dan isi sama — dicek bin/parity.mjs).
  */
 date_default_timezone_set('UTC');
-require dirname(__DIR__) . '/lib/php/Config.php';
-require dirname(__DIR__) . '/lib/php/Office.php';
 require dirname(__DIR__) . '/lib/php/Http.php';
+
+const MIME_TYPES = [
+    'js' => 'text/javascript; charset=utf-8',
+    'json' => 'application/json; charset=utf-8',
+    'glb' => 'model/gltf-binary',
+    'gltf' => 'model/gltf+json',
+    'bin' => 'application/octet-stream',
+    'png' => 'image/png',
+    'jpg' => 'image/jpeg',
+    'jpeg' => 'image/jpeg',
+    'webp' => 'image/webp',
+    'svg' => 'image/svg+xml',
+];
 
 $runtime = dirname(__DIR__);
 $projectEnv = (string) getenv('PORTFOLIO_PROJECT');
 $project = realpath($projectEnv !== '' ? $projectEnv : (string) getcwd());
-$storageEnv = (string) getenv('PORTFOLIO_STORAGE');
-$storage = $storageEnv !== '' ? rtrim($storageEnv, '/') : null;
 
 $send = static function (int $status, array $headers, string $body = ''): never {
     http_response_code($status);
@@ -49,33 +58,31 @@ if ($path === '/kerja/api/ping') {
     $send(200, ['Content-Type' => 'application/json; charset=utf-8', 'Cache-Control' => 'no-store'],
         (string) json_encode(['app' => 'portfolio-ku', 'project' => substr(md5($project), 0, 12), 'runtime' => 'php']));
 }
-$cfg = KConfig::load($runtime, $project);
 if ($path === '/kerja') {
-    $page = (string) file_get_contents($runtime . '/views/page.html');
-    $json = json_encode(KHttp::pageConfig($cfg), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_INVALID_UTF8_SUBSTITUTE);
-    $send(200, ['Content-Type' => 'text/html; charset=utf-8', 'Cache-Control' => 'no-cache'], strtr($page, [
-        '{{TITLE}}' => htmlspecialchars($cfg['title'], ENT_QUOTES),
-        '{{CONFIG_SCRIPT}}' => '<script>window.PORTFOLIO = ' . $json . ';</script>',
-    ]));
-}
-if ($path === '/kerja/api/state') {
-    $state = KOffice::build($project, $storage, $cfg, (int) floor(microtime(true) * 1000));
-    $send(200, ['Content-Type' => 'application/json; charset=utf-8', 'Cache-Control' => 'no-store'],
-        (string) json_encode($state, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE));
+    $send(200, ['Content-Type' => 'text/html; charset=utf-8', 'Cache-Control' => 'no-cache'],
+        (string) file_get_contents($runtime . '/views/page.html'));
 }
 if (str_starts_with($path, '/kerja/assets/')) {
     $rel = rawurldecode(substr($path, strlen('/kerja/assets/')));
     $base = realpath(__DIR__ . '/assets');
     $f = str_contains($rel, "\0") ? false : realpath(__DIR__ . '/assets/' . $rel);
-    if ($base === false || $f === false || !str_starts_with($f, $base . DIRECTORY_SEPARATOR) || !is_file($f)
-        || strtolower(pathinfo($f, PATHINFO_EXTENSION)) !== 'js') {
+    $ext = $f === false ? '' : strtolower((string) pathinfo($f, PATHINFO_EXTENSION));
+    if ($base === false || $f === false || !str_starts_with($f, $base . DIRECTORY_SEPARATOR) || !is_file($f) || !isset(MIME_TYPES[$ext])) {
         $send(404, []);
     }
     $etag = '"' . dechex((int) filemtime($f)) . '-' . dechex((int) filesize($f)) . '"';
-    $h = ['Content-Type' => 'text/javascript; charset=utf-8', 'Cache-Control' => 'public, max-age=3600', 'ETag' => $etag];
+    $h = ['Content-Type' => MIME_TYPES[$ext], 'Cache-Control' => 'public, max-age=3600', 'ETag' => $etag];
     if (($_SERVER['HTTP_IF_NONE_MATCH'] ?? '') === $etag) {
         $send(304, $h);
     }
-    $send(200, $h + ['Content-Length' => (string) filesize($f)], (string) file_get_contents($f));
+    // Berkas besar (model .glb ±130 MB) dialirkan agar tidak perlu dimuat seluruhnya ke memori PHP.
+    http_response_code(200);
+    foreach (KHttp::SECURITY_HEADERS + $h + ['Content-Length' => (string) filesize($f)] as $k => $v) {
+        header($k . ': ' . $v);
+    }
+    if ($method !== 'HEAD') {
+        readfile($f);
+    }
+    exit;
 }
 $send(404, $text, 'Tidak ditemukan');

@@ -711,7 +711,7 @@ function createBlueprintTexture() {
   ctx.fillStyle = '#e2e8f0';
   ctx.font = '12px monospace';
   ctx.fillText('STATUS: PRODUCTION READY | ACCREDITATION: S1 SISTEM INFORMASI (IPK 3.94) | HIMAFORSI DEPT HEAD', 60, 416);
-  ctx.fillText('CONTACT: vickymosafan@gmail.com | WHATSAPP: +62 822-3490-6710 | GITHUB: github.com/vickymosafan', 60, 442);
+  ctx.fillText('CONTACT: mvickymosafan@gmail.com | GITHUB: github.com/vickyymosafan', 60, 442);
 
   const tex = new THREE.CanvasTexture(canvas);
   tex.anisotropy = 4;
@@ -1785,7 +1785,7 @@ export function openProjectDetail(idx) {
     </div>
 
     <div style="display: flex; gap: 10px; justify-content: flex-end;">
-      <a href="https://github.com/vickymosafan" target="_blank" rel="noopener noreferrer" style="background: var(--lime); color: #090b0f; font-weight: 800; padding: 8px 18px; border-radius: 99px;">Buka GitHub</a>
+      <a href="https://github.com/vickyymosafan" target="_blank" rel="noopener noreferrer" style="background: var(--lime); color: #090b0f; font-weight: 800; padding: 8px 18px; border-radius: 99px;">Buka GitHub</a>
       <button type="button" class="btn-close" style="padding: 8px 16px; border-radius: 99px; background: transparent; border: 1px solid var(--line); color: var(--ink);">Tutup</button>
     </div>
   `;
@@ -1804,7 +1804,7 @@ export function openCompleteDoc() {
     <div style="margin-bottom: 18px;">
       <h1 style="font-size: 24px; font-weight: 800;">${p.fullName}</h1>
       <p style="color: var(--lime); font-weight: 600; font-size: 14px;">${p.title}</p>
-      <p style="color: var(--muted); font-size: 12px; margin-top: 4px;">${p.location} • ${p.email} • ${p.phone}</p>
+      <p style="color: var(--muted); font-size: 12px; margin-top: 4px;">${p.location} • ${p.email}</p>
     </div>
 
     <hr style="border: 0; border-top: 1px solid var(--line); margin: 16px 0;">
